@@ -85,8 +85,8 @@
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
     const audioStreamer = new AudioStreamer(audioContext);
     const mediaHandler = new MediaHandler();
-    const api = new GeminiAPI('ws://localhost:8081'); //only for local development
-    // const api = new GeminiAPI();
+    // const api = new GeminiAPI('ws://localhost:8081'); //only for local development
+    const api = new GeminiAPI('wss://pastra-backend-83304708959.us-central1.run.app'); //only for local development
 
     let isStarted = false;
     let isRecording = false;

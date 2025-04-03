@@ -124,19 +124,26 @@ CONFIG = {
     "tools": [{
         "function_declarations": [
             {
-                "name": "get_weather",
-                "description": "Get weather information for a location",
+                "name": "get_past_appointments",
+                "description": "Get a list of past calendar appointments within a specified date range. Can optionally filter by location.", # Updated description
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "city": {
+                        "start_date": {
                             "type": "string",
-                            "description": "The city or location to get weather for"
+                            "description": "The start date for the range (YYYY-MM-DD format). Defaults to 14 days ago if omitted."
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "description": "The end date for the range (YYYY-MM-DD format). Defaults to today if omitted."
+                        },
+                        "location": {
+                            "type": "string",
+                            "description": "Optional location filter (e.g., 'Office', 'Client Site'). Only events containing this text in their location field will be returned."
                         }
                     },
-                    "required": ["city"]
                 }
-            },
+            }
         ]
     }],
     "system_instruction": SYSTEM_INSTRUCTIONS
