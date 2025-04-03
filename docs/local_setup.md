@@ -27,7 +27,7 @@ Before you begin, ensure you have the following installed and configured:
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/heiko-hotz/project-pastra-v2.git
+    git clone https://github.com/heiko-hotz/project-pastra.git
     cd project-pastra-v2
     ```
 
