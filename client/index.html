@@ -75,7 +75,8 @@
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
     const audioStreamer = new AudioStreamer(audioContext);
     const mediaHandler = new MediaHandler();
-    const api = new GeminiAPI('ws://localhost:8081');
+    const wsEndpoint = 'ws://localhost:8081';
+    const api = new GeminiAPI(wsEndpoint);
 
     let isRecording = false;
     let hasShownSpeakingMessage = false;
