@@ -83,7 +83,7 @@ This uses Cloud Build (`server/cloudbuild.yaml`) to build the Docker image and d
 
 ```bash
 # Navigate to the project root directory
-cd /path/to/project-pastra-v2
+cd /path/to/project-pastra
 
 # Submit the build and deployment job
 # This uses the configuration in server/cloudbuild.yaml
@@ -120,7 +120,7 @@ This uses Cloud Build (`client/cloudbuild.yaml`) to build the client's Docker im
 
 ```bash
 # Navigate to the project root directory (if not already there)
-cd /path/to/project-pastra-v2
+cd /path/to/project-pastra
 
 # Construct the WebSocket URL for the backend
 export WSS_BACKEND_URL=$(echo ${BACKEND_URL} | sed 's|https://|wss://|')

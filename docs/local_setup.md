@@ -81,7 +81,7 @@ Before you begin, ensure you have the following installed and configured:
     *   Open a **new terminal window/tab**.
     *   Navigate to the client directory:
         ```bash
-        cd ../client # Or navigate from the project root: cd project-pastra-v2/client
+        cd ../client # Or navigate from the project root: cd project-pastra/client
         ```
     *   Start a simple Python HTTP server:
         ```bash

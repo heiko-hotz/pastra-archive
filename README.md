@@ -10,7 +10,7 @@ Think "Star Trek computer" interaction – speak naturally, show your webcam, sh
 
 This project builds upon the concepts from the [Gemini Multimodal Live API Developer Guide](https://github.com/heiko-hotz/gemini-multimodal-live-dev-guide) with a focus on a more production-ready setup and enhanced features.
 
-**ℹ️ For general project setup, deployment instructions, and architecture details, please refer to the [README in the `main` branch](https://github.com/heiko-hotz/project-pastra-v2/blob/main/README.md).**
+**ℹ️ For general project setup, deployment instructions, and architecture details, please refer to the [README in the `main` branch](https://github.com/heiko-hotz/project-pastra/blob/main/README.md).**
 
 ## ✨ Key Features
 
@@ -47,4 +47,4 @@ This demonstrates how the core conversational AI can be augmented with specific 
 
 ---
 
-*(Reminder: General project setup, deployment, full architecture, troubleshooting, and license information can be found in the [README of the `main` branch](https://github.com/heiko-hotz/project-pastra-v2/blob/main/README.md).)*
+*(Reminder: General project setup, deployment, full architecture, troubleshooting, and license information can be found in the [README of the `main` branch](https://github.com/heiko-hotz/project-pastra/blob/main/README.md).)*
