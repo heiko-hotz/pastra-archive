@@ -47,7 +47,6 @@ Before you begin, ensure you have the following installed and configured:
     *   **Fill in the required values:**
         *   `GOOGLE_API_KEY`: **Required** if *not* using Vertex AI or ADC. Paste your Gemini API key here.
         *   `WEATHER_FUNCTION_URL`: **Required** for the weather tool. Paste the trigger URL of your deployed `get-weather-tool` function.
-        *   `FORECAST_FUNCTION_URL`: **Required** for the forecast tool. Paste the trigger URL of your deployed `get-forecast-tool` function.
         *   `CALENDAR_FUNCTION_URL`: **Required** for the calendar tool. Paste the trigger URL of your deployed `get-calendar-tool` function.
         *   `OPENWEATHER_API_KEY`: **Required** if *not* storing it in Secret Manager and accessing via ADC. Paste your OpenWeather API key here.
     *   **Optional/Advanced Configuration:**

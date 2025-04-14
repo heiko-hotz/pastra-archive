@@ -107,7 +107,6 @@ The server's configuration is managed through a combination of Google Cloud Secr
 
      # Cloud Function URLs (replace with your actual function URLs)
      WEATHER_FUNCTION_URL=https://REGION-PROJECT_ID.cloudfunctions.net/get-weather-tool
-     FORECAST_FUNCTION_URL=https://REGION-PROJECT_ID.cloudfunctions.net/get-forecast-tool
      CALENDAR_FUNCTION_URL=https://REGION-PROJECT_ID.cloudfunctions.net/get-calendar-tool
 
      # Optional: API keys as fallbacks for local development (if not using Secret Manager locally)
