@@ -124,17 +124,24 @@ CONFIG = {
     "tools": [{
         "function_declarations": [
             {
-                "name": "get_weather",
-                "description": "Get weather information for a location",
+                "name": "print_blackboard",
+                "description": "Output the summary of the key concepts and knowledge of the current round of conversation to the user in text form and display them on the blackboard. Scientific formulas should be in standard latex with '$' surroundings and the explanations should include necessary explanations. Also, bold some important terms with '**' surroundings according to the explanation. You cannot and must not output 'Step x'on the blackboard, just the key knowledge of the current step.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "city": {
-                            "type": "string",
-                            "description": "The city or location to get weather for"
+                        "content": {
+                            "type": "STRING",
+                            "description": "The content need to be displayed on the blackboard, showed to students."
+                        },
+                        "explanation_is_finish": {
+                            "type": "BOOLEAN",
+                            "description": "Indicates whether the teacher's explanation is over. True means explanation is finish, False otherwise"
                         }
                     },
-                    "required": ["city"]
+                    # Note: The user's provided spec didn't include required fields.
+                    # Keeping the original structure might require adding:
+                    # "required": ["content", "explanation_is_finish"]
+                    # Let me know if you want to add the 'required' field.
                 }
             },
         ]

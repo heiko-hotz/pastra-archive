@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 async def execute_tool(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a tool based on name and parameters by calling the corresponding cloud function"""
     try:
-        if tool_name not in CLOUD_FUNCTIONS:
+        if tool_name == "print_blackboard":
+            logger.debug(f"Printing blackboard: {params}")
+            return {"success": True}
+        elif tool_name not in CLOUD_FUNCTIONS:
             logger.error(f"Tool not found: {tool_name}")
             return {"error": f"Unknown tool: {tool_name}"}
 

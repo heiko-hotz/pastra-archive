@@ -42,6 +42,10 @@
     <button id="screenButton" class="action-button">
       <span class="material-symbols-outlined">present_to_all</span>
     </button>
+    <button id="uploadImageButton" class="action-button">
+      <span class="material-symbols-outlined">upload_file</span>
+    </button>
+    <input type="file" id="imageUploadInput" accept="image/*" style="display: none;"/>
     <div class="text-input-container">
       <input type="text" id="textInput" placeholder="Type your message..." class="text-input">
       <button id="sendButton" class="action-button">
@@ -298,6 +302,86 @@
       }
     `;
     document.head.appendChild(style);
+
+    // --- Helper function to resize image ---
+    async function resizeImage(file, maxWidth, maxHeight, quality = 0.8) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+
+            // Calculate new dimensions while preserving aspect ratio
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Get the data URL and extract base64
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve(dataUrl.split(',')[1]); 
+          };
+          img.onerror = (error) => {
+            console.error('Image loading error:', error);
+            reject(new Error('Could not load image for resizing.'));
+          };
+          img.src = event.target.result;
+        };
+        reader.onerror = (error) => {
+          console.error('File reading error:', error);
+          reject(new Error('Could not read file for resizing.'));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+    // -------------------------------------
+
+    // Image Upload Logic
+    const uploadImageButton = document.getElementById('uploadImageButton');
+    const imageUploadInput = document.getElementById('imageUploadInput');
+
+    uploadImageButton.onclick = () => {
+      imageUploadInput.click(); // Trigger hidden file input
+    };
+
+    imageUploadInput.onchange = async (event) => { // Make handler async
+      const file = event.target.files[0];
+      if (!file) {
+        return; // No file selected
+      }
+
+      if (!file.type.startsWith('image/')) { 
+        logMessage('Error: Please select an image file.');
+        // Reset the input value even if the file is wrong type
+        imageUploadInput.value = null; 
+        return;
+      }
+
+      try {
+        logMessage('You: Resizing and sending uploaded image...');
+        // Resize the image (e.g., max 1024x1024, 80% JPEG quality)
+        const base64Image = await resizeImage(file, 1024, 1024, 0.8);
+        api.sendImage(base64Image);
+      } catch (error) {
+        console.error('Error processing image:', error);
+        logMessage('Error: ' + error.message);
+      }
+
+      // Reset the input value to allow uploading the same file again
+      imageUploadInput.value = null; 
+    };
   </script>
 </body>
 </html>
