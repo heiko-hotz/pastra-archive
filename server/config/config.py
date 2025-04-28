@@ -138,10 +138,6 @@ CONFIG = {
                             "description": "Indicates whether the teacher's explanation is over. True means explanation is finish, False otherwise"
                         }
                     },
-                    # Note: The user's provided spec didn't include required fields.
-                    # Keeping the original structure might require adding:
-                    # "required": ["content", "explanation_is_finish"]
-                    # Let me know if you want to add the 'required' field.
                 }
             },
         ]
