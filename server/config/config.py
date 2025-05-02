@@ -125,7 +125,7 @@ CONFIG = {
         "function_declarations": [
             {
                 "name": "print_blackboard",
-                "description": "Output the summary of the key concepts and knowledge of the current round of conversation to the user in text form and display them on the blackboard. Scientific formulas should be in standard latex with '$' surroundings and the explanations should include necessary explanations. Also, bold some important terms with '**' surroundings according to the explanation. You cannot and must not output 'Step x'on the blackboard, just the key knowledge of the current step.",
+                "description": "Blackboard for the teacher to write down the key knowledge of the current step.",
                 "parameters": {
                     "type": "object",
                     "properties": {
