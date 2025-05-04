@@ -165,6 +165,10 @@ async def handle_client_messages(websocket: Any, session: SessionState) -> None:
                         logger.info("Text sent to Gemini")
                     elif data["type"] == "end":
                         logger.info("Received end signal")
+                    elif data["type"] == "setup":
+                        # Setup message is handled initially in handle_client
+                        # We can potentially handle mid-session setup changes here if needed
+                        logger.info(f"Received setup message during active session (currently ignored): {data.get('data')}")
                     else:
                         logger.warning(f"Unsupported message type: {data.get('type')}")
             except Exception as e:
@@ -311,12 +315,36 @@ async def handle_client(websocket: Any) -> None:
     session = create_session(session_id)
     
     try:
-        # Create and initialize Gemini session
-        async with await create_gemini_session() as gemini_session:
+        # --- Send Ready Signal FIRST --- 
+        logger.info(f"Sending ready signal to client {session_id}")
+        await websocket.send(json.dumps({"ready": True}))
+        # ------------------------------
+
+        # --- Wait for initial setup message --- 
+        logger.info(f"Waiting for setup message from client {session_id}...")
+        setup_message_str = await websocket.recv()
+        setup_data = json.loads(setup_message_str)
+        
+        if setup_data.get("type") == "setup" and "data" in setup_data and "modality" in setup_data["data"]:
+            session.response_modality = setup_data["data"]["modality"]
+            if session.response_modality not in ["AUDIO", "TEXT"]:
+                logger.warning(f"Invalid modality '{session.response_modality}' received. Defaulting to AUDIO.")
+                session.response_modality = "AUDIO"
+            logger.info(f"Received setup for session {session_id}. Response modality set to: {session.response_modality}")
+        else:
+            logger.error(f"Invalid or missing setup message from client {session_id}. Closing connection.")
+            await send_error_message(websocket, {
+                "message": "Invalid setup message.",
+                "action": "Please ensure the client sends a valid setup message first.",
+                "error_type": "setup_error"
+            })
+            return # Exit early
+        # --- End Wait for setup message ---
+
+        # Create and initialize Gemini session *after* getting modality
+        async with await create_gemini_session(response_modality=session.response_modality) as gemini_session:
             session.genai_session = gemini_session
             
-            # Send ready message to client
-            await websocket.send(json.dumps({"ready": True}))
             logger.info(f"New session started: {session_id}")
             
             try:

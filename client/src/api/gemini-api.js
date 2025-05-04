@@ -19,12 +19,10 @@ export class GeminiAPI {
         this.endpoint = endpoint;
         this.ws = null;
         this.isSpeaking = false;
-        this.connect();
-    }
-
-    connect() {
-        console.log('Initializing GeminiAPI with endpoint:', this.endpoint);
-        this.ws = new WebSocket(this.endpoint);
+        // Promise to resolve when the WebSocket is open and ready signal received
+        this._readyPromise = null; 
+        this._resolveReady = null;
+        // Assign default handlers in constructor
         this.onReady = () => {};
         this.onAudioData = () => {};
         this.onTextContent = () => {};
@@ -32,15 +30,36 @@ export class GeminiAPI {
         this.onTurnComplete = () => {};
         this.onFunctionCall = () => {};
         this.onFunctionResponse = () => {};
-        this.onInterrupted = () => {};  // New callback for interruption events
+        this.onInterrupted = () => {};
+        this.onConnect = () => {}; 
+        // Don't connect immediately
+        // this.connect(); 
+    }
+
+    connect() {
+        // Prevent multiple connections
+        if (this.ws && this.ws.readyState < 2) { // CONNECTING or OPEN
+            console.log('WebSocket connection already exists or is in progress.');
+            return this._readyPromise; // Return existing promise
+        }
+        
+        console.log('Initializing GeminiAPI with endpoint:', this.endpoint);
+        this.ws = new WebSocket(this.endpoint);
+        
+        // Setup the ready promise
+        this._readyPromise = new Promise((resolve) => {
+            this._resolveReady = resolve;
+        });
         
         this.setupWebSocket();
+        return this._readyPromise; // Return the promise
     }
 
     setupWebSocket() {
         this.ws.onopen = () => {
-            console.log('WebSocket connection is opening...');
-            this.onReady();
+            console.log('WebSocket connection is opening... (onopen)');
+            // Don't call onReady or onConnect here directly
+            // Wait for the server's ready signal
         };
 
         this.ws.onmessage = async (event) => {
@@ -64,7 +83,14 @@ export class GeminiAPI {
 
                 if (response.ready) {
                     console.log('Received ready signal from server');
-                    this.onReady();
+                    this.onReady(); // Call the user-defined onReady handler
+                    if(this._resolveReady) {
+                        this._resolveReady(); // Resolve the internal ready promise
+                        this._resolveReady = null; // Prevent multiple resolves
+                    }
+                    // Send initial setup message AFTER ready signal
+                    console.log('[gemini-api.js] About to call this.onConnect()...');
+                    this.onConnect(); 
                     return;
                 }
 
@@ -158,6 +184,14 @@ export class GeminiAPI {
         });
     }
 
+    sendSetupMessage(setupData) {
+        console.log('Sending setup message:', setupData);
+        this.sendMessage({
+            type: 'setup',
+            data: setupData
+        });
+    }
+
     sendMessage(message) {
         if (this.ws.readyState === WebSocket.OPEN) {
             console.log('Sending message:', {
@@ -175,6 +209,16 @@ export class GeminiAPI {
             console.error('WebSocket is not open. Current state:', states[this.ws.readyState]);
             this.onError(`WebSocket is not ready (State: ${states[this.ws.readyState]}). Please try again.`);
         }
+    }
+
+    // Method to explicitly wait for connection readiness
+    async ensureReady() {
+        if (!this.ws || this.ws.readyState >= 2) { // CLOSING or CLOSED
+           await this.connect(); // Reconnect if closed or not initialized
+        }
+        console.log('Waiting for API to be ready...');
+        await this._readyPromise;
+        console.log('API is ready.');
     }
 
     async ensureConnected() {

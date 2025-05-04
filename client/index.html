@@ -57,6 +57,22 @@
     </div>
   </div>
 
+  <!-- Modality Radio Buttons -->
+  <div class="modality-radio-container">
+    <span class="modality-label">Response:</span>
+    <input type="radio" id="modalityAudio" name="modality" value="AUDIO" checked>
+    <label for="modalityAudio">Audio</label>
+    <input type="radio" id="modalityText" name="modality" value="TEXT">
+    <label for="modalityText">Text</label>
+  </div>
+  <!-- End Modality Radio Buttons -->
+
+  <!-- Connect Button -->
+  <div class="connect-container">
+    <button id="connectButton" class="action-button connect-button">Connect</button>
+  </div>
+  <!-- End Connect Button -->
+
   <div class="video-container">
     <video id="videoPreview" autoplay playsinline class="hidden"></video>
   </div>
@@ -80,78 +96,134 @@
     const audioStreamer = new AudioStreamer(audioContext);
     const mediaHandler = new MediaHandler();
     const wsEndpoint = 'ws://localhost:8081';
-    const api = new GeminiAPI(wsEndpoint);
+    let api = null; // Declare api, instantiate on first interaction
+    let isApiReady = false; // Track if the API connection/setup is complete
 
     let isRecording = false;
     let hasShownSpeakingMessage = false;
     let currentTurn = 0;
     let lastAudioTurn = -1;
+    let responseModality = 'AUDIO'; // Default to Audio
+
+    // Modality Toggle Elements -- REMOVE
+    // const modalityToggle = document.getElementById('modalityToggle');
+    // const modalityLabel = document.getElementById('modalityLabel');
+    // Modality Radio Button Elements
+    const modalityRadios = document.querySelectorAll('input[name="modality"]');
+    const modalityAudioRadio = document.getElementById('modalityAudio');
+    const modalityTextRadio = document.getElementById('modalityText');
+
+    // Button Elements
+    const connectButton = document.getElementById('connectButton');
+    const micButton = document.getElementById('micButton');
+    const sendButton = document.getElementById('sendButton');
+    const uploadImageButton = document.getElementById('uploadImageButton');
 
     // Initialize media handler
     mediaHandler.initialize(document.getElementById('videoPreview'));
 
-    // Set up API handlers
-    api.onReady = () => {
-      document.getElementById('micButton').disabled = false;
-    };
-
-    api.onAudioData = async (audioData) => {
-      try {
-        if (!api.isSpeaking || lastAudioTurn !== currentTurn) {
-          logMessage('Gemini: Speaking...');
-          api.isSpeaking = true;
-          lastAudioTurn = currentTurn;
-          document.getElementById('interruptButton').style.display = 'inline-block';
-        }
-        const arrayBuffer = base64ToArrayBuffer(audioData);
-        audioStreamer.addPCM16(new Uint8Array(arrayBuffer));
-        audioStreamer.resume();
-      } catch (error) {
-        console.error('Error playing audio:', error);
+    // Function to initialize API connection if needed
+    async function ensureApiConnected() {
+      if (api && isApiReady) {
+        return; // Already connected and ready
       }
-    };
 
-    api.onTextContent = (text) => {
-      if (text.trim()) {
-        logMessage('Gemini: ' + text);
-      }
-    };
+      if (!api) {
+        console.log('API not initialized. Connecting...');
+        api = new GeminiAPI(wsEndpoint);
 
-    api.onTurnComplete = () => {
-      logMessage('Gemini: Finished speaking');
-      api.isSpeaking = false;  // Reset speaking state
-      audioStreamer.complete();
-      document.getElementById('interruptButton').style.display = 'none';
-    };
+        // Set up API handlers (needs to be done after instantiation)
+        api.onReady = () => {
+          console.log('API received ready signal from backend.');
+          // Don't enable mic button here anymore
+          // document.getElementById('micButton').disabled = false;
+          isApiReady = true; // Mark API as ready *after* server confirms
+        };
 
-    // Add interruption handler
-    api.onInterrupted = (data) => {
-      logMessage('Gemini: Response interrupted');
-      api.isSpeaking = false;
-      audioStreamer.stop();  // Stop current playback and clear queue
-      document.getElementById('interruptButton').style.display = 'none';
-      
-      // Show visual feedback for interruption
-      const messageElement = document.createElement('p');
-      messageElement.className = 'interrupted-message';
-      messageElement.textContent = 'Response interrupted by user input';
-      output.appendChild(messageElement);
-      output.scrollTop = output.scrollHeight;
-    };
+        api.onConnect = () => {
+          console.log('WebSocket connected, sending modality:', responseModality);
+          // Send setup *after* ready signal is confirmed by onReady setting isApiReady
+          api.sendSetupMessage({ modality: responseModality }); 
+        };
 
-    // Add function call and response handlers
-    api.onFunctionCall = (data) => {
-      logMessage('Function: ' + data.name);
-      logMessage('Parameters: ' + JSON.stringify(data.args, null, 2));
-    };
+        // Re-assign all other handlers
+        api.onAudioData = async (audioData) => {
+          if (responseModality === 'TEXT') return;
+          try {
+            if (!api.isSpeaking || lastAudioTurn !== currentTurn) {
+              logMessage('Gemini: Speaking...');
+              api.isSpeaking = true;
+              lastAudioTurn = currentTurn;
+              document.getElementById('interruptButton').style.display = 'inline-block';
+            }
+            const arrayBuffer = base64ToArrayBuffer(audioData);
+            audioStreamer.addPCM16(new Uint8Array(arrayBuffer));
+            audioStreamer.resume();
+          } catch (error) {
+            console.error('Error playing audio:', error);
+          }
+        };
+        api.onTextContent = (text) => {
+          if (text.trim()) {
+            logMessage('Gemini: ' + text);
+          }
+        };
+        api.onTurnComplete = () => {
+          logMessage('Gemini: Finished speaking');
+          api.isSpeaking = false;
+          audioStreamer.complete();
+          document.getElementById('interruptButton').style.display = 'none';
+        };
+        api.onInterrupted = (data) => {
+          logMessage('Gemini: Response interrupted');
+          api.isSpeaking = false;
+          audioStreamer.stop();
+          document.getElementById('interruptButton').style.display = 'none';
+          const messageElement = document.createElement('p');
+          messageElement.className = 'interrupted-message';
+          messageElement.textContent = 'Response interrupted by user input';
+          output.appendChild(messageElement);
+          output.scrollTop = output.scrollHeight;
+        };
+        api.onFunctionCall = (data) => {
+          logMessage('Function: ' + data.name);
+          logMessage('Parameters: ' + JSON.stringify(data.args, null, 2));
+        };
+        api.onFunctionResponse = (data) => {
+          logMessage('API Response: ' + JSON.stringify(data, null, 2));
+        };
+        api.onError = (errorData) => { // Add error handler assignment
+            console.error("API Error:", errorData);
+            logMessage(`Error: ${errorData.message} ${errorData.action || ''}`);
+            // Potentially disable buttons or show overlay
+            document.getElementById('micButton').disabled = true;
+        };
 
-    api.onFunctionResponse = (data) => {
-      logMessage('API Response: ' + JSON.stringify(data, null, 2));
-    };
+        // Start the connection process (returns the ready promise)
+        api.connect(); // Explicitly start connection after assigning handlers
+
+      } 
+      // Wait until the API confirms it's ready (WebSocket open + server ready signal)
+      await api.ensureReady(); 
+    }
+
+    // ---- Interaction Button State ----
+    function setInteractionButtonsDisabled(disabled) {
+        micButton.disabled = disabled;
+        sendButton.disabled = disabled;
+        uploadImageButton.disabled = disabled;
+        // Also disable text input field
+        document.getElementById('textInput').disabled = disabled;
+    }
+    // Initially disable interaction buttons
+    setInteractionButtonsDisabled(true);
+    // ---- End Interaction Button State ----
 
     // UI Event Handlers
     async function startRecording() {
       try {
+        // await ensureApiConnected(); // Connection is now ensured by Connect button
+
         // If model is speaking, treat this as an interruption
         if (api.isSpeaking) {
           audioStreamer.stop();
@@ -209,7 +281,9 @@
         messageElement.className = 'function-params';
       } else if (message.startsWith('API Response:')) {
         messageElement.className = 'api-response';
-      } else if (message.startsWith('Gemini:')) {
+      } else if (message === 'Gemini: Finished speaking') { // Specific check for turn complete
+        messageElement.className = 'turn-complete-message';
+      } else if (message.startsWith('Gemini:')) { // General Gemini message
         messageElement.className = 'gemini-message';
       } else if (message.startsWith('You:')) {
         messageElement.className = 'user-message';
@@ -221,10 +295,12 @@
     }
 
     // Add function to send text message
-    function sendTextMessage() {
+    async function sendTextMessage() { // Make async
       const textInput = document.getElementById('textInput');
       const text = textInput.value.trim();
-      if (!text) return;
+      if (!text || !api) return; // Add !api check
+
+      // await ensureApiConnected(); // Connection is now ensured by Connect button
 
       // Clear input
       textInput.value = '';
@@ -349,7 +425,6 @@
     // -------------------------------------
 
     // Image Upload Logic
-    const uploadImageButton = document.getElementById('uploadImageButton');
     const imageUploadInput = document.getElementById('imageUploadInput');
 
     uploadImageButton.onclick = () => {
@@ -358,8 +433,8 @@
 
     imageUploadInput.onchange = async (event) => { // Make handler async
       const file = event.target.files[0];
-      if (!file) {
-        return; // No file selected
+      if (!file || !api) { // Add !api check
+        return; // No file selected or API not ready
       }
 
       if (!file.type.startsWith('image/')) { 
@@ -370,6 +445,8 @@
       }
 
       try {
+        // await ensureApiConnected(); // Connection is now ensured by Connect button
+
         logMessage('You: Resizing and sending uploaded image...');
         // Resize the image (e.g., max 1024x1024, 80% JPEG quality)
         const base64Image = await resizeImage(file, 1024, 1024, 0.8);
@@ -382,6 +459,38 @@
       // Reset the input value to allow uploading the same file again
       imageUploadInput.value = null; 
     };
+
+    // Modality Radio Button Handler
+    modalityRadios.forEach(radio => {
+      radio.addEventListener('change', (event) => {
+        if (event.target.checked) {
+          responseModality = event.target.value;
+          console.log('Switched response modality to:', responseModality);
+        }
+      });
+    });
+
+    // Connect Button Handler
+    connectButton.addEventListener('click', async () => {
+      console.log('Connect button clicked.');
+      connectButton.disabled = true; // Disable connect button during/after connection
+      connectButton.textContent = 'Connecting...';
+      try {
+        await ensureApiConnected(); // Establish connection
+        console.log('Connection successful!');
+        connectButton.textContent = 'Connected'; 
+        setInteractionButtonsDisabled(false); // Enable interaction buttons
+        // Disable Radio Buttons
+        modalityAudioRadio.disabled = true;
+        modalityTextRadio.disabled = true;
+      } catch (error) {
+        console.error('Connection failed:', error);
+        logMessage('Error: Connection failed. Please check console and refresh.');
+        connectButton.textContent = 'Connection Failed';
+        // Keep connect button disabled on failure to prevent spamming
+        // User needs to refresh
+      }
+    });
   </script>
 </body>
 </html>

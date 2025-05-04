@@ -23,7 +23,7 @@ from config.config import MODEL, CONFIG, api_config, ConfigurationError
 
 logger = logging.getLogger(__name__)
 
-async def create_gemini_session():
+async def create_gemini_session(response_modality: str = "AUDIO"):
     """Create and initialize the Gemini client and session"""
     try:
         # Initialize authentication
@@ -59,9 +59,14 @@ async def create_gemini_session():
             )
                 
         # Create the session
+        # Use the provided response modality
+        session_config = CONFIG.copy() if CONFIG else {}
+        session_config["response_modalities"] = [response_modality]
+        logger.info(f"Creating Gemini LiveSession with config: {session_config}")
+
         session = client.aio.live.connect(
             model=MODEL,
-            config=CONFIG
+            config=session_config # Pass the modified config
         )
         
         return session
