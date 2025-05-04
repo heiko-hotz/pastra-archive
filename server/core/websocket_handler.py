@@ -398,10 +398,10 @@ async def handle_client(websocket: Any) -> None:
                 session.response_modality = "AUDIO"
             
             # Check for transcription flags
-            if "input_audio_transcription" in client_data and isinstance(client_data["input_audio_transcription"], dict):
+            if "input_audio_transcription" in client_data and client_data["input_audio_transcription"] is True:
                 enable_input_transcription = True
                 logger.info(f"Enabling input transcription for session {session_id}")
-            if "output_audio_transcription" in client_data and isinstance(client_data["output_audio_transcription"], dict):
+            if "output_audio_transcription" in client_data and client_data["output_audio_transcription"] is True:
                 enable_output_transcription = True
                 logger.info(f"Enabling output transcription for session {session_id}")
         else:

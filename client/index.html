@@ -67,6 +67,16 @@
   </div>
   <!-- End Modality Radio Buttons -->
 
+  <!-- Transcription Checkboxes -->
+  <div class="transcription-checkbox-container">
+      <span class="transcription-label">Enable Transcriptions:</span>
+      <input type="checkbox" id="inputTranscriptionCheckbox" name="transcription" value="input">
+      <label for="inputTranscriptionCheckbox">Input</label>
+      <input type="checkbox" id="outputTranscriptionCheckbox" name="transcription" value="output">
+      <label for="outputTranscriptionCheckbox">Output</label>
+  </div>
+  <!-- End Transcription Checkboxes -->
+
   <!-- Connect Button -->
   <div class="connect-container">
     <button id="connectButton" class="action-button connect-button">Connect</button>
@@ -119,6 +129,10 @@
     const sendButton = document.getElementById('sendButton');
     const uploadImageButton = document.getElementById('uploadImageButton');
 
+    // Transcription Checkbox Elements
+    const inputTranscriptionCheckbox = document.getElementById('inputTranscriptionCheckbox');
+    const outputTranscriptionCheckbox = document.getElementById('outputTranscriptionCheckbox');
+
     // Initialize media handler
     mediaHandler.initialize(document.getElementById('videoPreview'));
 
@@ -146,8 +160,8 @@
           // Include transcription flags in the setup message
           const setupConfig = {
             modality: responseModality,
-            input_audio_transcription: {},
-            output_audio_transcription: {}
+            input_audio_transcription: inputTranscriptionCheckbox.checked,
+            output_audio_transcription: outputTranscriptionCheckbox.checked
           };
           api.sendSetupMessage(setupConfig);
         };
@@ -518,11 +532,14 @@
       try {
         await ensureApiConnected(); // Establish connection
         console.log('Connection successful!');
-        connectButton.textContent = 'Connected'; 
+        connectButton.textContent = 'Connected';
         setInteractionButtonsDisabled(false); // Enable interaction buttons
         // Disable Radio Buttons
         modalityAudioRadio.disabled = true;
         modalityTextRadio.disabled = true;
+        // Disable Transcription Checkboxes
+        inputTranscriptionCheckbox.disabled = true;
+        outputTranscriptionCheckbox.disabled = true;
       } catch (error) {
         console.error('Connection failed:', error);
         logMessage('Error: Connection failed. Please check console and refresh.');
