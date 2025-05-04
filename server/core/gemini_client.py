@@ -24,14 +24,21 @@ from google.genai.types import ( # Import necessary types
     SpeechConfig,
     VoiceConfig,
     PrebuiltVoiceConfig,
-    GenerationConfig # Import GenerationConfig if needed for other params
+    GenerationConfig, # Import GenerationConfig if needed for other params
+    SessionResumptionConfig # Import SessionResumptionConfig
 )
 from config.config import MODEL, CONFIG, api_config, ConfigurationError
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-async def create_gemini_session(response_modality: str = "AUDIO", enable_input_transcription: bool = False, enable_output_transcription: bool = False):
-    """Create and initialize the Gemini client and session, optionally enabling transcriptions."""
+async def create_gemini_session(
+    response_modality: str = "AUDIO", 
+    enable_input_transcription: bool = False, 
+    enable_output_transcription: bool = False,
+    session_handle_id: Optional[str] = None # Add session_handle_id parameter
+):
+    """Create and initialize the Gemini client and session, optionally enabling transcriptions and session resumption."""
     try:
         # Initialize authentication
         await api_config.initialize()
@@ -102,6 +109,14 @@ async def create_gemini_session(response_modality: str = "AUDIO", enable_input_t
 
         if CONFIG and 'system_instruction' in CONFIG:
             session_config_dict["system_instruction"] = CONFIG['system_instruction']
+
+        # --- Session Resumption ---
+        if session_handle_id:
+            logger.info(f"Resuming session with handle: {session_handle_id}")
+            session_config_dict["session_resumption"] = SessionResumptionConfig(handle=session_handle_id)
+        else:
+            logger.info("Enabling session resumption to get a new handle.")
+            session_config_dict["session_resumption"] = SessionResumptionConfig() # Enable to get a new handle
 
         # --- Nested generation_config (only for standard generation params) ---
         base_gen_config = CONFIG.get('generation_config', {}) if CONFIG else {}

@@ -41,6 +41,7 @@ class SessionState:
     received_model_response: bool = False
     response_modality: str = "AUDIO"
     audio_buffer: List[bytes] = field(default_factory=list)
+    session_handle_id: Optional[str] = None
 
 # Global session storage
 active_sessions: Dict[str, SessionState] = {}

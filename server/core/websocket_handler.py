@@ -210,10 +210,13 @@ async def handle_client_messages(websocket: Any, session: SessionState) -> None:
 async def handle_gemini_responses(websocket: Any, session: SessionState) -> None:
     """Handle responses from Gemini."""
     tool_queue = asyncio.Queue()  # Queue for tool responses
-    
+    # --- Add handling for session handle updates --- 
+    session_handle_update_task = None 
+    # ---------------------------------------------
+
     # Start a background task to process tool calls
     tool_processor = asyncio.create_task(process_tool_queue(tool_queue, websocket, session))
-    
+
     try:
         while True:
             async for response in session.genai_session.receive():
@@ -229,6 +232,20 @@ async def handle_gemini_responses(websocket: Any, session: SessionState) -> None
                         await tool_queue.put(response.tool_call)
                         continue  # Continue processing other responses while tool executes
                     
+                    # --- Check for session resumption update --- 
+                    if response.session_resumption_update:
+                        new_handle = response.session_resumption_update.new_handle
+                        if new_handle:
+                            logger.info(f"Received session handle update: {new_handle}")
+                            session.session_handle_id = new_handle # Store in session state
+                            # Send the handle to the client
+                            await websocket.send(json.dumps({
+                                "type": "session_handle_update",
+                                "data": new_handle
+                            }))
+                        continue # Don't process further if it was just a handle update
+                    # ----------------------------------------
+
                     # Process server content (including audio, text, and transcriptions)
                     # Pass session_id for potential saving
                     await process_server_content(websocket, session, response.server_content)
@@ -384,6 +401,7 @@ async def handle_client(websocket: Any) -> None:
         
         enable_input_transcription = False
         enable_output_transcription = False
+        session_handle_id_from_client: Optional[str] = None # Variable to store handle from client
 
         if setup_data.get("type") == "setup" and "data" in setup_data:
             client_data = setup_data["data"]
@@ -404,6 +422,12 @@ async def handle_client(websocket: Any) -> None:
             if "output_audio_transcription" in client_data and client_data["output_audio_transcription"] is True:
                 enable_output_transcription = True
                 logger.info(f"Enabling output transcription for session {session_id}")
+            
+            # --- Extract session handle ID --- 
+            if "session_handle_id" in client_data and client_data["session_handle_id"]:
+                session_handle_id_from_client = client_data["session_handle_id"]
+                logger.info(f"Received request to resume session with handle: {session_handle_id_from_client}")
+            # ---------------------------------
         else:
             logger.error(f"Invalid or missing setup message from client {session_id}. Closing connection.")
             await send_error_message(websocket, {
@@ -418,7 +442,8 @@ async def handle_client(websocket: Any) -> None:
         async with await create_gemini_session(
             response_modality=session.response_modality,
             enable_input_transcription=enable_input_transcription,
-            enable_output_transcription=enable_output_transcription
+            enable_output_transcription=enable_output_transcription,
+            session_handle_id=session_handle_id_from_client # Pass the handle here
         ) as gemini_session:
             session.genai_session = gemini_session
             

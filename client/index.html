@@ -83,6 +83,14 @@
   </div>
   <!-- End Connect Button -->
 
+  <!-- Session Handle Display -->
+  <div id="sessionHandleContainer" class="session-handle-container" style="display: none;">
+    <span class="session-handle-label">Session Handle:</span> 
+    <span id="sessionHandleDisplay" class="session-handle-id">None</span>
+    <button id="useLastHandleButton" class="action-button use-handle-button" title="Use this handle on next connect">Use</button>
+  </div>
+  <!-- End Session Handle Display -->
+
   <div class="video-container">
     <video id="videoPreview" autoplay playsinline class="hidden"></video>
   </div>
@@ -108,6 +116,8 @@
     const wsEndpoint = 'ws://localhost:8081';
     let api = null; // Declare api, instantiate on first interaction
     let isApiReady = false; // Track if the API connection/setup is complete
+    let currentSessionHandleId = localStorage.getItem('lastSessionHandleId') || null; // Load from storage
+    let useLastHandle = false; // Flag to indicate if user wants to use the last handle
 
     let isRecording = false;
     let hasShownSpeakingMessage = false;
@@ -133,8 +143,28 @@
     const inputTranscriptionCheckbox = document.getElementById('inputTranscriptionCheckbox');
     const outputTranscriptionCheckbox = document.getElementById('outputTranscriptionCheckbox');
 
+    // Session Handle Elements
+    const sessionHandleContainer = document.getElementById('sessionHandleContainer');
+    const sessionHandleDisplay = document.getElementById('sessionHandleDisplay');
+    const useLastHandleButton = document.getElementById('useLastHandleButton');
+
     // Initialize media handler
     mediaHandler.initialize(document.getElementById('videoPreview'));
+
+    // --- Update Session Handle UI ---
+    function updateSessionHandleUI() {
+      if (currentSessionHandleId) {
+        sessionHandleDisplay.textContent = currentSessionHandleId;
+        sessionHandleContainer.style.display = 'block';
+        useLastHandleButton.disabled = false;
+      } else {
+        sessionHandleDisplay.textContent = 'None';
+        sessionHandleContainer.style.display = 'none';
+        useLastHandleButton.disabled = true;
+      }
+    }
+    updateSessionHandleUI(); // Initial UI update
+    // ------------------------------
 
     // Function to initialize API connection if needed
     async function ensureApiConnected() {
@@ -158,11 +188,16 @@
           console.log('WebSocket connected, sending modality:', responseModality);
           // Send setup *after* ready signal is confirmed by onReady setting isApiReady
           // Include transcription flags in the setup message
+          // Include session handle if requested
           const setupConfig = {
             modality: responseModality,
             input_audio_transcription: inputTranscriptionCheckbox.checked,
             output_audio_transcription: outputTranscriptionCheckbox.checked
           };
+          if (useLastHandle && currentSessionHandleId) {
+            console.log('Including session handle in setup:', currentSessionHandleId);
+            setupConfig.session_handle_id = currentSessionHandleId;
+          }
           api.sendSetupMessage(setupConfig);
         };
 
@@ -231,6 +266,16 @@
             // Potentially disable buttons or show overlay
             document.getElementById('micButton').disabled = true;
         };
+
+        // --- Add handler for Session Handle Updates ---
+        api.onSessionHandleUpdate = (handleId) => {
+            console.log('Received new session handle:', handleId);
+            currentSessionHandleId = handleId;
+            localStorage.setItem('lastSessionHandleId', handleId); // Store in local storage
+            updateSessionHandleUI(); // Update the displayed handle
+            useLastHandle = false; // Reset the flag after getting a new handle
+        };
+        // ---------------------------------------------
 
         // Start the connection process (returns the ready promise)
         api.connect(); // Explicitly start connection after assigning handlers
@@ -542,10 +587,24 @@
         outputTranscriptionCheckbox.disabled = true;
       } catch (error) {
         console.error('Connection failed:', error);
+        useLastHandle = false; // Reset flag on failure
         logMessage('Error: Connection failed. Please check console and refresh.');
         connectButton.textContent = 'Connection Failed';
         // Keep connect button disabled on failure to prevent spamming
         // User needs to refresh
+      }
+    });
+
+    // Use Last Handle Button Handler
+    useLastHandleButton.addEventListener('click', () => {
+      if (currentSessionHandleId) {
+        useLastHandle = true;
+        logMessage(`Attempting to reconnect with handle: ${currentSessionHandleId}. Click Connect.`);
+        // Optionally, you could automatically trigger connect here, 
+        // but let's keep it manual for clarity.
+        // connectButton.click(); 
+      } else {
+        logMessage('No session handle available to use.');
       }
     });
   </script>

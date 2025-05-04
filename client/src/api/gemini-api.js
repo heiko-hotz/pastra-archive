@@ -32,6 +32,8 @@ export class GeminiAPI {
         this.onFunctionResponse = () => {};
         this.onInterrupted = () => {};
         this.onConnect = () => {}; 
+        // Add handler for session handle updates
+        this.onSessionHandleUpdate = () => {}; 
         // Don't connect immediately
         // this.connect(); 
     }
@@ -119,6 +121,9 @@ export class GeminiAPI {
                 } else if (response.type === 'output_transcription') {
                     console.log('Received output transcription:', response.data);
                     this.onOutputTranscription(response.data);
+                } else if (response.type === 'session_handle_update') {
+                    console.log('Received session handle update:', response.data);
+                    this.onSessionHandleUpdate(response.data);
                 } else {
                     console.log('Received unknown message type:', response);
                 }
