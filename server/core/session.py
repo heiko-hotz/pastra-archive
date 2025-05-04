@@ -16,27 +16,38 @@
 Session management for Gemini Multimodal Live Proxy Server
 """
 
-from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from dataclasses import dataclass, field
+from typing import Dict, Any, Optional, List
 import asyncio
+import logging
+import json
+import base64
+import traceback
+import wave
+import os
+import datetime
+
+from google.genai import types
 
 @dataclass
 class SessionState:
     """Tracks the state of a client session"""
+    session_id: str
     is_receiving_response: bool = False
     interrupted: bool = False
     current_tool_execution: Optional[asyncio.Task] = None
     current_audio_stream: Optional[Any] = None
     genai_session: Optional[Any] = None
-    received_model_response: bool = False  # Track if we've received a model response in current turn
-    response_modality: str = "AUDIO" # Default to AUDIO, can be "TEXT"
+    received_model_response: bool = False
+    response_modality: str = "AUDIO"
+    audio_buffer: List[bytes] = field(default_factory=list)
 
 # Global session storage
 active_sessions: Dict[str, SessionState] = {}
 
 def create_session(session_id: str) -> SessionState:
     """Create and store a new session"""
-    session = SessionState()
+    session = SessionState(session_id=session_id)
     active_sessions[session_id] = session
     return session
 

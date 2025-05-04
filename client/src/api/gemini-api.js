@@ -113,6 +113,12 @@ export class GeminiAPI {
                 } else if (response.type === 'function_response') {
                     console.log('Received function response:', response.data);
                     this.onFunctionResponse(response.data);
+                } else if (response.type === 'input_transcription') {
+                    console.log('Received input transcription:', response.data);
+                    this.onInputTranscription(response.data);
+                } else if (response.type === 'output_transcription') {
+                    console.log('Received output transcription:', response.data);
+                    this.onOutputTranscription(response.data);
                 } else {
                     console.log('Received unknown message type:', response);
                 }

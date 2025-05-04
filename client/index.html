@@ -143,7 +143,13 @@
         api.onConnect = () => {
           console.log('WebSocket connected, sending modality:', responseModality);
           // Send setup *after* ready signal is confirmed by onReady setting isApiReady
-          api.sendSetupMessage({ modality: responseModality }); 
+          // Include transcription flags in the setup message
+          const setupConfig = {
+            modality: responseModality,
+            input_audio_transcription: {},
+            output_audio_transcription: {}
+          };
+          api.sendSetupMessage(setupConfig);
         };
 
         // Re-assign all other handlers
@@ -167,6 +173,19 @@
           if (text.trim()) {
             logMessage('Gemini: ' + text);
           }
+        };
+        // Add handlers for transcriptions - log directly
+        api.onInputTranscription = (text) => {
+            if (text && text.trim()) {
+                // Log fragment immediately
+                logMessage('You (Transcribing): ' + text);
+            }
+        };
+        api.onOutputTranscription = (text) => {
+            if (text && text.trim()) {
+                // Log fragment immediately
+                logMessage('Gemini (Transcribing): ' + text);
+            }
         };
         api.onTurnComplete = () => {
           logMessage('Gemini: Finished speaking');
@@ -288,6 +307,12 @@
       } else if (message.startsWith('You:')) {
         messageElement.className = 'user-message';
       }
+      // Update classes for transcriptions
+      else if (message.startsWith('You (Transcribing):')) {
+        messageElement.className = 'user-transcription-message';
+      } else if (message.startsWith('Gemini (Transcribing):')) {
+        messageElement.className = 'gemini-transcription-message';
+      }
       
       messageElement.textContent = message;
       output.appendChild(messageElement);
@@ -375,6 +400,21 @@
         padding: 4px 8px;
         border-left: 3px solid #ff6b6b;
         background-color: rgba(255, 107, 107, 0.1);
+      }
+      /* Add styles for transcription messages */
+      .user-transcription-message {
+        color: #666; /* Lighter color for transcription */
+        font-style: italic;
+        margin: 2px 0 4px 20px; /* Indent slightly */
+        padding: 2px 6px;
+        font-size: 0.9em;
+      }
+      .gemini-transcription-message {
+        color: #555; /* Lighter color for transcription */
+        font-style: italic;
+        margin: 2px 0 4px 20px; /* Indent slightly */
+        padding: 2px 6px;
+        font-size: 0.9em;
       }
     `;
     document.head.appendChild(style);

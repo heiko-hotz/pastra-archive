@@ -21,7 +21,10 @@ import json
 import asyncio
 import base64
 import traceback
-from typing import Any, Optional
+import wave
+import os
+import datetime
+from typing import Any, Optional, List
 from google.genai import types
 
 from core.tool_handler import execute_tool
@@ -29,6 +32,30 @@ from core.session import create_session, remove_session, SessionState
 from core.gemini_client import create_gemini_session
 
 logger = logging.getLogger(__name__)
+
+# Define the output directory relative to this script's location
+AUDIO_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'output_audio')
+os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True) # Ensure the directory exists
+
+def save_audio_to_wav(session_id: str, audio_bytes_list: List[bytes]):
+    """Saves the collected audio bytes to a WAV file."""
+    if not audio_bytes_list:
+        logger.info(f"No audio bytes to save for session {session_id}")
+        return
+
+    combined_audio_bytes = b"".join(audio_bytes_list)
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    filename = os.path.join(AUDIO_OUTPUT_DIR, f"turn_audio_{session_id}_{timestamp}.wav")
+
+    try:
+        with wave.open(filename, 'wb') as wf:
+            wf.setnchannels(1)       # Mono
+            wf.setsampwidth(2)       # 16-bit PCM = 2 bytes
+            wf.setframerate(24000)   # 24kHz sample rate
+            wf.writeframes(combined_audio_bytes)
+        logger.info(f"Saved turn audio for session {session_id} to {filename}")
+    except Exception as e:
+        logger.error(f"Error saving WAV file {filename}: {e}")
 
 async def send_error_message(websocket: Any, error_data: dict) -> None:
     """Send formatted error message to client."""
@@ -202,7 +229,8 @@ async def handle_gemini_responses(websocket: Any, session: SessionState) -> None
                         await tool_queue.put(response.tool_call)
                         continue  # Continue processing other responses while tool executes
                     
-                    # Process server content (including audio) immediately
+                    # Process server content (including audio, text, and transcriptions)
+                    # Pass session_id for potential saving
                     await process_server_content(websocket, session, response.server_content)
                     
                 except Exception as e:
@@ -273,7 +301,7 @@ async def process_tool_queue(queue: asyncio.Queue, websocket: Any, session: Sess
             queue.task_done()
 
 async def process_server_content(websocket: Any, session: SessionState, server_content: Any):
-    """Process server content including audio and text."""
+    """Process server content including audio, text, and transcriptions."""
     # Check for interruption first
     if hasattr(server_content, 'interrupted') and server_content.interrupted:
         logger.info("Interruption detected from Gemini")
@@ -290,8 +318,12 @@ async def process_server_content(websocket: Any, session: SessionState, server_c
         session.received_model_response = True
         session.is_receiving_response = True
         for part in server_content.model_turn.parts:
-            if part.inline_data:
-                audio_base64 = base64.b64encode(part.inline_data.data).decode('utf-8')
+            if part.inline_data and hasattr(part.inline_data, 'data'): # Check if data attribute exists
+                audio_bytes = part.inline_data.data
+                # Append raw bytes to buffer
+                session.audio_buffer.append(audio_bytes)
+                # Send base64 encoded audio to client for playback
+                audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                 await websocket.send(json.dumps({
                     "type": "audio",
                     "data": audio_base64
@@ -301,8 +333,33 @@ async def process_server_content(websocket: Any, session: SessionState, server_c
                     "type": "text",
                     "data": part.text
                 }))
-    
-    if server_content.turn_complete:
+
+    # Handle Input Transcription
+    if hasattr(server_content, 'input_transcription') and server_content.input_transcription and hasattr(server_content.input_transcription, 'text'):
+        input_text = server_content.input_transcription.text
+        if input_text and input_text.strip():
+            logger.debug(f"Received input transcription: {input_text}")
+            await websocket.send(json.dumps({
+                "type": "input_transcription",
+                "data": input_text
+            }))
+
+    # Handle Output Transcription
+    if hasattr(server_content, 'output_transcription') and server_content.output_transcription and hasattr(server_content.output_transcription, 'text'):
+        output_text = server_content.output_transcription.text
+        if output_text and output_text.strip():
+            logger.debug(f"Received output transcription: {output_text}")
+            await websocket.send(json.dumps({
+                "type": "output_transcription",
+                "data": output_text
+            }))
+
+    if hasattr(server_content, 'turn_complete') and server_content.turn_complete:
+        # Save accumulated audio from the buffer to a WAV file
+        save_audio_to_wav(session.session_id, session.audio_buffer)
+        # Clear the buffer for the next turn
+        session.audio_buffer.clear()
+
         await websocket.send(json.dumps({
             "type": "turn_complete"
         }))
@@ -325,12 +382,28 @@ async def handle_client(websocket: Any) -> None:
         setup_message_str = await websocket.recv()
         setup_data = json.loads(setup_message_str)
         
-        if setup_data.get("type") == "setup" and "data" in setup_data and "modality" in setup_data["data"]:
-            session.response_modality = setup_data["data"]["modality"]
-            if session.response_modality not in ["AUDIO", "TEXT"]:
-                logger.warning(f"Invalid modality '{session.response_modality}' received. Defaulting to AUDIO.")
+        enable_input_transcription = False
+        enable_output_transcription = False
+
+        if setup_data.get("type") == "setup" and "data" in setup_data:
+            client_data = setup_data["data"]
+            if "modality" in client_data:
+                session.response_modality = client_data["modality"]
+                if session.response_modality not in ["AUDIO", "TEXT"]:
+                    logger.warning(f"Invalid modality '{session.response_modality}' received. Defaulting to AUDIO.")
+                    session.response_modality = "AUDIO"
+                logger.info(f"Received setup for session {session_id}. Response modality set to: {session.response_modality}")
+            else:
+                logger.warning(f"Modality missing in setup data for {session_id}. Defaulting to AUDIO.")
                 session.response_modality = "AUDIO"
-            logger.info(f"Received setup for session {session_id}. Response modality set to: {session.response_modality}")
+            
+            # Check for transcription flags
+            if "input_audio_transcription" in client_data and isinstance(client_data["input_audio_transcription"], dict):
+                enable_input_transcription = True
+                logger.info(f"Enabling input transcription for session {session_id}")
+            if "output_audio_transcription" in client_data and isinstance(client_data["output_audio_transcription"], dict):
+                enable_output_transcription = True
+                logger.info(f"Enabling output transcription for session {session_id}")
         else:
             logger.error(f"Invalid or missing setup message from client {session_id}. Closing connection.")
             await send_error_message(websocket, {
@@ -341,8 +414,12 @@ async def handle_client(websocket: Any) -> None:
             return # Exit early
         # --- End Wait for setup message ---
 
-        # Create and initialize Gemini session *after* getting modality
-        async with await create_gemini_session(response_modality=session.response_modality) as gemini_session:
+        # Create and initialize Gemini session *after* getting modality and transcription flags
+        async with await create_gemini_session(
+            response_modality=session.response_modality,
+            enable_input_transcription=enable_input_transcription,
+            enable_output_transcription=enable_output_transcription
+        ) as gemini_session:
             session.genai_session = gemini_session
             
             logger.info(f"New session started: {session_id}")

@@ -19,12 +19,19 @@ Gemini client initialization and connection management
 import logging
 import os
 from google import genai
+from google.genai.types import ( # Import necessary types
+    LiveConnectConfig, 
+    SpeechConfig,
+    VoiceConfig,
+    PrebuiltVoiceConfig,
+    GenerationConfig # Import GenerationConfig if needed for other params
+)
 from config.config import MODEL, CONFIG, api_config, ConfigurationError
 
 logger = logging.getLogger(__name__)
 
-async def create_gemini_session(response_modality: str = "AUDIO"):
-    """Create and initialize the Gemini client and session"""
+async def create_gemini_session(response_modality: str = "AUDIO", enable_input_transcription: bool = False, enable_output_transcription: bool = False):
+    """Create and initialize the Gemini client and session, optionally enabling transcriptions."""
     try:
         # Initialize authentication
         await api_config.initialize()
@@ -58,15 +65,61 @@ async def create_gemini_session(response_modality: str = "AUDIO"):
                 api_key=api_config.api_key
             )
                 
-        # Create the session
-        # Use the provided response modality
-        session_config = CONFIG.copy() if CONFIG else {}
-        session_config["response_modalities"] = [response_modality]
-        logger.info(f"Creating Gemini LiveSession with config: {session_config}")
+        # Create the session config according to the new structure
+        session_config_dict = {}
+
+        # --- Top-level parameters --- 
+        session_config_dict["response_modalities"] = [response_modality]
+        
+        # Extract voice name from old config structure (handle potential errors)
+        voice_name = "Aoede" # Default voice
+        if CONFIG and 'generation_config' in CONFIG and 'speech_config' in CONFIG['generation_config']:
+             # Assuming speech_config in old config was just the voice name string
+             if isinstance(CONFIG['generation_config']['speech_config'], str):
+                 voice_name = CONFIG['generation_config']['speech_config']
+             else:
+                 logger.warning("Unexpected structure for speech_config in CONFIG, using default voice.")
+        else:
+            logger.warning("speech_config not found in CONFIG['generation_config'], using default voice.")
+
+        # Create SpeechConfig object
+        session_config_dict["speech_config"] = SpeechConfig(
+            voice_config=VoiceConfig(
+                prebuilt_voice_config=PrebuiltVoiceConfig(
+                    voice_name=voice_name
+                )
+            )
+            # language_code="en-US" # Optional: Add language code if needed
+        )
+
+        if enable_input_transcription:
+            session_config_dict["input_audio_transcription"] = {} # Needs to be an object
+        if enable_output_transcription:
+            session_config_dict["output_audio_transcription"] = {} # Needs to be an object
+
+        if CONFIG and 'tools' in CONFIG:
+            session_config_dict["tools"] = CONFIG['tools']
+
+        if CONFIG and 'system_instruction' in CONFIG:
+            session_config_dict["system_instruction"] = CONFIG['system_instruction']
+
+        # --- Nested generation_config (only for standard generation params) ---
+        base_gen_config = CONFIG.get('generation_config', {}) if CONFIG else {}
+        # Filter out params moved to top-level or handled specifically
+        filtered_gen_config_params = {
+            k: v for k, v in base_gen_config.items() 
+            if k not in ['response_modalities', 'speech_config'] 
+        }
+        
+        # Only add generation_config if it contains relevant parameters
+        if filtered_gen_config_params:
+             session_config_dict["generation_config"] = GenerationConfig(**filtered_gen_config_params)
+
+        logger.info(f"Creating Gemini LiveSession with config dict: {session_config_dict}")
 
         session = client.aio.live.connect(
             model=MODEL,
-            config=session_config # Pass the modified config
+            config=session_config_dict # Pass the structured dictionary
         )
         
         return session
