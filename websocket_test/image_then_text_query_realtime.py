@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 GEMINI_LIVE_API_URL = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent"
 MODEL_NAME_ID = "gemini-2.0-flash-live-preview-04-09" # Using the same model ID
-IMAGE_PATH = "test/test_image.png" # User changed to test.png
+IMAGE_PATH = "websocket_test/test_image.png" # User changed to test.png
 OUTPUT_MODALITY = "TEXT"
 # -------
 
