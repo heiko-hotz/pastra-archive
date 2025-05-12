@@ -19,11 +19,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-GEMINI_LIVE_API_URL = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent"
+# GEMINI_LIVE_API_URL = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent"
+GEMINI_LIVE_API_URL = "wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent"
 MODEL_NAME_ID = "gemini-2.0-flash-live-preview-04-09"
 IMAGE_PATH = "websocket_test/test_image.png"
 OUTPUT_MODALITY = "AUDIO"
 SYSTEM_INSTRUCTIONS_PATH = "websocket_test/system-instruction_original.txt"
+
+ENABLE_SESSION_RESUMPTION = False # Set to False to disable
+ENABLE_AUDIO_PLAYBACK = False # Set to False to disable audio playback
 
 DEFAULT_CHANNELS = 1
 DEFAULT_SAMPLE_WIDTH_BYTES = 2
@@ -109,7 +113,7 @@ async def process_websocket_action_sequence(action_sequence: list):
     bearer_token, project_id = await get_access_token()
     if not bearer_token or not project_id:
         logger.error("Failed to get bearer token or project ID. Exiting.")
-        return
+        return ScriptState.ERROR, False
 
     location = "us-central1"
     publisher = "google"
@@ -120,6 +124,7 @@ async def process_websocket_action_sequence(action_sequence: list):
     ssl_context = ssl.create_default_context(cafile=certifi.where())
 
     current_script_state = ScriptState.INITIAL
+    is_1011_error_occurred = False
     action_index = 0
     
     current_turn_generation_has_completed = False
@@ -130,8 +135,8 @@ async def process_websocket_action_sequence(action_sequence: list):
     output_stream = None
 
     try:
-        if OUTPUT_MODALITY == "AUDIO":
-            logger.info("Audio output modality selected. Initializing PyAudio.")
+        if OUTPUT_MODALITY == "AUDIO" and ENABLE_AUDIO_PLAYBACK:
+            logger.info("Audio output modality selected and playback is ENABLED. Initializing PyAudio.")
             pya = pyaudio.PyAudio()
             output_stream = await asyncio.to_thread(
                 pya.open,
@@ -141,6 +146,8 @@ async def process_websocket_action_sequence(action_sequence: list):
                 output=True
             )
             logger.info("PyAudio output stream opened.")
+        elif OUTPUT_MODALITY == "AUDIO" and not ENABLE_AUDIO_PLAYBACK:
+            logger.info("Audio output modality selected but playback is DISABLED by global flag.")
 
         current_script_state = ScriptState.CONNECTING
         async with websockets.connect(
@@ -153,19 +160,36 @@ async def process_websocket_action_sequence(action_sequence: list):
 
             system_instructions_text = load_system_instructions()
             
-            setup_message = {
-                "setup": {
-                    "model": dynamic_model_name,
-                    "generationConfig": {"responseModalities": [OUTPUT_MODALITY]},
-                    "systemInstruction": {
-                        "parts": [{
-                            "text": system_instructions_text
-                        }]
-                    },
-                    "tools": [
-                        {"functionDeclarations": [PRINT_BLACKBOARD_TOOL_SCHEMA]}
-                    ]
+            setup_payload = {
+                "model": dynamic_model_name,
+                "generationConfig": {"responseModalities": [OUTPUT_MODALITY]},
+                "systemInstruction": {
+                    "parts": [{
+                        "text": system_instructions_text
+                    }]
+                },
+                "tools": [
+                    {"functionDeclarations": [PRINT_BLACKBOARD_TOOL_SCHEMA]}
+                ]
+            }
+
+            setup_payload["inputAudioTranscription"] = {}
+            setup_payload["outputAudioTranscription"] = {}
+            setup_payload["realtimeInputConfig"] = {
+                "automaticActivityDetection": {
+                    "startOfSpeechSensitivity": "START_SENSITIVITY_LOW"
                 }
+            }
+
+
+            if ENABLE_SESSION_RESUMPTION:
+                setup_payload["sessionResumption"] = {}
+                logger.info("Session resumption is ENABLED.")
+            else:
+                logger.info("Session resumption is DISABLED.")
+
+            setup_message = {
+                "setup": setup_payload
             }
             logger.info(f"Sending setup message: {json.dumps(setup_message)}")
             await websocket.send(json.dumps(setup_message))
@@ -209,20 +233,20 @@ async def process_websocket_action_sequence(action_sequence: list):
                             client_text_payload = {
                                 "clientContent": {
                                     "turns": [{"role": "user", "parts": [{"text": prompt_text}]}],
-                                    "turnComplete": True 
+                                    "turnComplete": current_action.get("turnComplete", True)
                                 }
                             }
                             logger.info(f"Sending text (clientContent) for '{last_sent_action_description}': {json.dumps(client_text_payload)}")
                             await websocket.send(json.dumps(client_text_payload))
                             action_index += 1
 
-                            if current_action.get("expect_response", False):
-                                logger.info(f"Sent text for '{last_sent_action_description}'. Now waiting for model response.")
+                            if current_action.get("turnComplete", True):
+                                logger.info(f"Sent text for '{last_sent_action_description}' with turnComplete=true. Now waiting for model response.")
                                 current_script_state = ScriptState.WAITING_FOR_MODEL_RESPONSE
                                 current_turn_generation_has_completed = False
                                 current_turn_has_completed = False
                             else:
-                                logger.info(f"Sent text for '{last_sent_action_description}'. Not expecting an immediate dedicated response.")
+                                logger.info(f"Sent text for '{last_sent_action_description}' with turnComplete=false. Not expecting an immediate dedicated response.")
                         else:
                             logger.error(f"Unknown action type: {action_type} in action: {last_sent_action_description}. Aborting.")
                             current_script_state = ScriptState.ERROR
@@ -235,7 +259,7 @@ async def process_websocket_action_sequence(action_sequence: list):
                     try:
                         timeout_duration = 60.0
                         if current_script_state == ScriptState.PROCESSING_ACTIONS and action_index >= len(action_sequence):
-                            timeout_duration = 10.0 
+                            timeout_duration = 5.0
                         elif current_script_state == ScriptState.WAITING_FOR_SETUP_COMPLETE:
                             timeout_duration = 60.0
                         elif current_script_state == ScriptState.WAITING_FOR_MODEL_RESPONSE:
@@ -259,13 +283,53 @@ async def process_websocket_action_sequence(action_sequence: list):
                             logger.error("Timeout waiting for setupComplete from server. Aborting.")
                             current_script_state = ScriptState.ERROR
                         continue
-                    except websockets.exceptions.ConnectionClosed:
-                        logger.info("Connection closed by server.")
+                    except websockets.exceptions.ConnectionClosedError as e:
+                        if e.code == 1011 and "Internal error occurred" in str(e.reason):
+                            logger.error(f"Connection closed by server with code 1011 and reason 'Internal error occurred'. This is a known issue. Details: {e}", exc_info=True)
+                            print("\nAN UNEXPECTED INTERNAL SERVER ERROR OCCURRED (CODE 1011). Please check logs for details.\n")
+                            current_script_state = ScriptState.ERROR
+                            is_1011_error_occurred = True
+                        else:
+                            logger.error(f"Connection closed abnormally by server: Code {e.code}, Reason: {e.reason}", exc_info=True)
+                            current_script_state = ScriptState.ERROR
+                        break
+                    except websockets.exceptions.ConnectionClosedOK as e:
+                        logger.info(f"Connection closed normally by server: Code {e.code}, Reason: {e.reason}")
                         current_script_state = ScriptState.CLOSING
+                        break
+                    except websockets.exceptions.ConnectionClosed as e: # Fallback for other connection closed types
+                        logger.warning(f"Connection closed by server (unclassified): Code {e.code}, Reason: {e.reason}", exc_info=True)
+                        current_script_state = ScriptState.CLOSING # Treat as closing, could be ERROR if preferred
                         break
                     
                     message = json.loads(message_str)
-                    logger.debug(f"Raw server message: {json.dumps(message, indent=2)}")
+                    
+                    # Log the raw server message, truncating audio data if present
+                    if logger.isEnabledFor(logging.DEBUG):
+                        debug_message = json.loads(message_str) # Create a copy for logging
+                        if "serverContent" in debug_message and \
+                           "modelTurn" in debug_message["serverContent"] and \
+                           "parts" in debug_message["serverContent"]["modelTurn"]:
+                            for part in debug_message["serverContent"]["modelTurn"]["parts"]:
+                                if part.get("inlineData") and part["inlineData"].get("data"):
+                                    data = part["inlineData"]["data"]
+                                    if isinstance(data, str) and len(data) > 20: # Truncate if long string
+                                        part["inlineData"]["data"] = data[:20] + "..."
+                        logger.debug(f"Raw server message: {json.dumps(debug_message, indent=2)}")
+                    else:
+                        # Non-debug logging could be less verbose or structured differently if needed
+                        pass # Currently, no specific non-debug raw message logging
+
+                    # --- Log session handle update at INFO level ---
+                    if "sessionResumptionUpdate" in message:
+                        update_info = message["sessionResumptionUpdate"]
+                        new_handle = update_info.get("newHandle")
+                        resumable_status = update_info.get("resumable")
+                        if new_handle:
+                            logger.info(f"Session Handle Update: New Handle ID = {new_handle}, Resumable = {resumable_status}")
+                        elif resumable_status is not None: # Log even if handle is empty but resumable status is given
+                            logger.info(f"Session Handle Update: No new handle. Resumable = {resumable_status}")
+                    # -----------------------------------------------
 
                     if "setupComplete" in message and current_script_state == ScriptState.WAITING_FOR_SETUP_COMPLETE:
                         logger.info("Session setup complete. Moving to process actions.")
@@ -311,7 +375,7 @@ async def process_websocket_action_sequence(action_sequence: list):
                                 current_turn_generation_has_completed = False
                                 current_turn_has_completed = False
 
-                            if OUTPUT_MODALITY == "AUDIO":
+                            if OUTPUT_MODALITY == "AUDIO" and ENABLE_AUDIO_PLAYBACK:
                                 if "modelTurn" in server_content and "parts" in server_content["modelTurn"]:
                                     for part in server_content["modelTurn"]["parts"]:
                                         if part.get("inlineData") and part["inlineData"].get("data"):
@@ -324,9 +388,18 @@ async def process_websocket_action_sequence(action_sequence: list):
                                                     if output_stream:
                                                         await asyncio.to_thread(output_stream.write, decoded_bytes)
                                                     else:
-                                                        logger.warning("Output stream not available for audio playback.")
+                                                        # This case should ideally not be hit if ENABLE_AUDIO_PLAYBACK is true,
+                                                        # as output_stream should have been initialized.
+                                                        logger.warning("Output stream not available for audio playback despite ENABLE_AUDIO_PLAYBACK being true.")
                                                 except Exception as e:
                                                     logger.error(f"Error decoding or playing audio: {e}", exc_info=True)
+                            elif OUTPUT_MODALITY == "AUDIO" and not ENABLE_AUDIO_PLAYBACK:
+                                if "modelTurn" in server_content and "parts" in server_content["modelTurn"]:
+                                     for part in server_content["modelTurn"]["parts"]:
+                                        if part.get("inlineData") and part["inlineData"].get("data"):
+                                            mime_type = part["inlineData"].get("mimeType", "N/A")
+                                            if "audio" in mime_type.lower():
+                                                logger.debug(f"Received audio chunk (MimeType: {mime_type}), but playback is DISABLED.")
                         else:
                             if response_text_part:
                                  logger.info("Received unsolicited server content.")
@@ -349,7 +422,12 @@ async def process_websocket_action_sequence(action_sequence: list):
         logger.error(f"WebSocket connection failed: Status {e.status_code}, Headers: {e.headers}", exc_info=True)
         current_script_state = ScriptState.ERROR
     except websockets.exceptions.ConnectionClosedError as e:
-        logger.error(f"Connection closed unexpectedly: {e.code} {e.reason}", exc_info=True)
+        if e.code == 1011 and "Internal error occurred" in str(e.reason):
+            logger.error(f"Connection closed with code 1011 and reason 'Internal error occurred'. This is a known issue. Details: {e}", exc_info=True)
+            print("\nAN UNEXPECTED INTERNAL SERVER ERROR OCCURRED (CODE 1011). Please check logs for details.\n")
+            is_1011_error_occurred = True
+        else:
+            logger.error(f"Connection closed unexpectedly: {e.code} {e.reason}", exc_info=True)
         current_script_state = ScriptState.ERROR
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}", exc_info=True)
@@ -369,6 +447,7 @@ async def process_websocket_action_sequence(action_sequence: list):
                 logger.info("PyAudio instance terminated.")
             except Exception as e:
                 logger.error(f"Error terminating PyAudio instance: {e}", exc_info=True)
+        return current_script_state, is_1011_error_occurred
 
 if __name__ == "__main__":
     if not IMAGE_PATH:
@@ -382,24 +461,55 @@ if __name__ == "__main__":
     except FileNotFoundError:
         logger.warning(f"Default image file '{IMAGE_PATH}' not found. Ensure paths in actions are correct if this is used.")
 
-    action_sequence = [
-        {
-            "action": "send_image_realtime",
-            "description": "Send initial test image via realtimeInput",
-            "expect_response": False
-        },
+    original_action_sequence = [
         {
             "action": "send_text_clientcontent",
             "prompt": "Here is the image.",
-            "expect_response": True, 
+            "turnComplete": False,
             "description": "Image sent"
+        },
+        {
+            "action": "send_image_realtime",
+            "description": "Send test image via realtimeInput"
         },
         {
             "action": "send_text_clientcontent",
             "prompt": "Describe the image in detail.",
-            "expect_response": True,
+            "turnComplete": True,
             "description": "Image description"
         },
     ]
 
-    asyncio.run(process_websocket_action_sequence(action_sequence)) 
+    successful_runs = 0
+    error_1011_runs = 0
+    other_error_runs = 0
+    total_runs = 10
+
+    for i in range(total_runs):
+        logger.info(f"--- Starting iteration {i + 1}/{total_runs} ---")
+        try:
+            # It's important that action_sequence is fresh or unmodified if process_websocket_action_sequence modifies it.
+            # Assuming process_websocket_action_sequence does not modify the list's contents.
+            final_state, was_1011 = asyncio.run(process_websocket_action_sequence(original_action_sequence))
+            
+            if was_1011:
+                logger.info(f"Iteration {i+1} resulted in a 1011 error.")
+                error_1011_runs += 1
+            elif final_state == ScriptState.FINISHED:
+                logger.info(f"Iteration {i+1} finished successfully.")
+                successful_runs += 1
+            else:
+                logger.warning(f"Iteration {i+1} finished with state {final_state.name} (not a 1011 error and not successful). Considered 'other error'.")
+                other_error_runs += 1
+        except Exception as e:
+            logger.error(f"Iteration {i+1} failed with an unhandled exception directly from asyncio.run or setup: {e}", exc_info=True)
+            other_error_runs += 1 
+        
+        # Optional: Add a small delay between runs if needed, e.g., await asyncio.sleep(1)
+        # However, since asyncio.run is called each time, it's a fresh event loop.
+
+    logger.info("--- All iterations complete ---")
+    logger.info(f"Summary after {total_runs} runs:")
+    logger.info(f"  Successful runs: {successful_runs}")
+    logger.info(f"  1011 Error runs: {error_1011_runs}")
+    logger.info(f"  Other Error runs: {other_error_runs}") 
