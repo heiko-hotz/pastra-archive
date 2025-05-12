@@ -13,7 +13,7 @@ from enum import Enum, auto
 import pyaudio
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -25,9 +25,8 @@ MODEL_NAME_ID = "gemini-2.0-flash-live-preview-04-09"
 IMAGE_PATH = "websocket_test/test_image.png"
 OUTPUT_MODALITY = "AUDIO"
 SYSTEM_INSTRUCTIONS_PATH = "websocket_test/system-instruction_original.txt"
-
-ENABLE_SESSION_RESUMPTION = False # Set to False to disable
 ENABLE_AUDIO_PLAYBACK = False # Set to False to disable audio playback
+TOTAL_RUNS = 20
 
 DEFAULT_CHANNELS = 1
 DEFAULT_SAMPLE_WIDTH_BYTES = 2
@@ -182,11 +181,8 @@ async def process_websocket_action_sequence(action_sequence: list):
             }
 
 
-            if ENABLE_SESSION_RESUMPTION:
-                setup_payload["sessionResumption"] = {}
-                logger.info("Session resumption is ENABLED.")
-            else:
-                logger.info("Session resumption is DISABLED.")
+            setup_payload["sessionResumption"] = {}
+
 
             setup_message = {
                 "setup": setup_payload
@@ -467,7 +463,7 @@ if __name__ == "__main__":
             "prompt": "Here is the image.",
             "turnComplete": False,
             "description": "Image sent"
-        },
+        },        
         {
             "action": "send_image_realtime",
             "description": "Send test image via realtimeInput"
@@ -483,10 +479,9 @@ if __name__ == "__main__":
     successful_runs = 0
     error_1011_runs = 0
     other_error_runs = 0
-    total_runs = 10
 
-    for i in range(total_runs):
-        logger.info(f"--- Starting iteration {i + 1}/{total_runs} ---")
+    for i in range(TOTAL_RUNS):
+        logger.info(f"--- Starting iteration {i + 1}/{TOTAL_RUNS} ---")
         try:
             # It's important that action_sequence is fresh or unmodified if process_websocket_action_sequence modifies it.
             # Assuming process_websocket_action_sequence does not modify the list's contents.
@@ -509,7 +504,7 @@ if __name__ == "__main__":
         # However, since asyncio.run is called each time, it's a fresh event loop.
 
     logger.info("--- All iterations complete ---")
-    logger.info(f"Summary after {total_runs} runs:")
+    logger.info(f"Summary after {TOTAL_RUNS} runs:")
     logger.info(f"  Successful runs: {successful_runs}")
     logger.info(f"  1011 Error runs: {error_1011_runs}")
     logger.info(f"  Other Error runs: {other_error_runs}") 
